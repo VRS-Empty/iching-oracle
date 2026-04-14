@@ -1,16 +1,18 @@
-{
-  "plugins": [
-    "expo-sqlite"
-  ],
-  "extra": {
-    "eas": {
-      "projectId": "ccbfa8dc-c078-41f2-aa6f-37daefca8b79"
-    }
-  },
+﻿{
   "expo": {
+    "name": "iching-oracle",
+    "slug": "iching-oracle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
     "android": {
-      "package": "com.v_empty.ichingoracle"
+      "package": "com.v_empty.ichingoracle",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      }
     },
+    "plugins": ["expo-sqlite"],
     "extra": {
       "eas": {
         "projectId": "ccbfa8dc-c078-41f2-aa6f-37daefca8b79"
