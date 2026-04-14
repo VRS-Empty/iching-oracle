@@ -1,0 +1,20 @@
+{
+  "plugins": [
+    "expo-sqlite"
+  ],
+  "extra": {
+    "eas": {
+      "projectId": "ccbfa8dc-c078-41f2-aa6f-37daefca8b79"
+    }
+  },
+  "expo": {
+    "android": {
+      "package": "com.v_empty.ichingoracle"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ccbfa8dc-c078-41f2-aa6f-37daefca8b79"
+      }
+    }
+  }
+}
