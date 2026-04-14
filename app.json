@@ -4,13 +4,8 @@
     "slug": "iching-oracle",
     "version": "1.0.0",
     "orientation": "portrait",
-    "platforms": ["ios", "android"],
     "android": {
-      "package": "com.v_empty.ichingoracle",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
-      }
+      "package": "com.v_empty.ichingoracle"
     },
     "plugins": ["expo-sqlite"],
     "extra": {
