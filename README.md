@@ -136,7 +136,7 @@ Free  → 5 history records, base hexagram reading
 Premium → Unlock via:
   • In-App Purchase (IAP ready, mock in dev)
   • Promo code: time-gated, dual AsyncStorage persistence
-    - @iching_oracle:premium_unlocked_v1  (API key)
+    - @iching_oracle:premium_unlocked_v1  (IAP key)
     - @premium_status                      (promo key)
 ```
 
