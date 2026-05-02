@@ -165,4 +165,3 @@ This application is for **entertainment and self-reflection purposes only**. It 
 
 ---
 
-*This repository is private. Source code available upon request for recruitment purposes.*
