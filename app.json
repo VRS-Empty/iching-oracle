@@ -8,6 +8,10 @@
       "package": "com.v_empty.ichingoracle"
     },
     "plugins": ["expo-sqlite"],
+    "experiments": {
+      "_comment": "GitHub Pages serves a project site under /<repo>, but the exported index.html references the bundle with a root-absolute path. Without baseUrl those requests hit github.io/_expo/... and 404, leaving a blank page. Only affects `expo export --platform web`; native builds ignore it. Change this if the site moves to a host that serves from the root.",
+      "baseUrl": "/iching-oracle"
+    },
     "extra": {
       "eas": {
         "projectId": "ccbfa8dc-c078-41f2-aa6f-37daefca8b79"
