@@ -53,6 +53,9 @@ import LanguageToggle from '../components/LanguageToggle';
 import { usePremium } from '../hooks/usePremium';
 import { useHistory } from '../hooks/useHistory';
 
+// ── Ask the Oracle (RAG follow-up questions) ─────────────────────────────────
+import AskOracleSection from '../components/AskOracleSection';
+
 const { width: SCREEN_W } = Dimensions.get('window');
 
 // ─── Category config — icon & key are language-independent ───────────────────
@@ -781,6 +784,12 @@ export default function ResultScreen() {
             </View>
           </View>
         )}
+
+        {/* ── Ask the Oracle ───────────────────────────────────────────────── */}
+        {/* Sits above the premium gate deliberately: the free tier includes a
+            few questions a day, so burying it under the paywall would hide the
+            one part of this screen a non-paying user can act on. */}
+        <AskOracleSection result={result} onUpgrade={handleUpgrade} />
 
         {/* ── Life Categories (Premium) ─────────────────────────────────────── */}
         {isPremium ? (

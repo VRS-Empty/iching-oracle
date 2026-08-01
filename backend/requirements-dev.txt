@@ -1,0 +1,4 @@
+# Development and CI dependencies. Not installed on Render — the deployed
+# image only needs requirements.txt.
+-r requirements.txt
+pytest==9.1.1

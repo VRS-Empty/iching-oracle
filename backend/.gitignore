@@ -1,0 +1,23 @@
+# Secrets — never commit. Render supplies these as environment variables.
+.env
+
+# The embedded corpus. Its text_zh / text_en fields hold the full text of all
+# 512 hexagram passages, so committing it would put the same content this
+# repository deliberately removed in 886e3be back into a public repo.
+# Supplied to Render at deploy time instead — see README.md → Supplying the
+# corpus without committing it.
+data/embeddings.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local quota database (regenerated at runtime), including SQLite's
+# WAL side files (quota.db-shm / quota.db-wal), which *.db alone misses.
+*.db
+*.db-shm
+*.db-wal
+.embed_cache_*.jsonl

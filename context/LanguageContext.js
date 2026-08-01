@@ -57,6 +57,16 @@ const STORAGE_KEY = '@iching_oracle:language_v1';
  */
 function detectDeviceLocale() {
   try {
+    // On web the NativeModules bridge does not exist, so both branches below
+    // would yield 'en' and every browser visitor would land in English
+    // regardless of their language. The browser reports it directly.
+    if (Platform.OS === 'web') {
+      const locale =
+        (typeof navigator !== 'undefined' &&
+          (navigator.language || navigator.languages?.[0])) || 'en';
+      return locale.toLowerCase().startsWith('zh') ? LANG.ZH : LANG.EN;
+    }
+
     const locale =
       Platform.OS === 'ios'
         ? NativeModules.SettingsManager?.settings?.AppleLocale ||
@@ -83,6 +93,9 @@ export const UI_STRINGS = {
   // ── Home Screen
   homeSubtitle:       { zh: '三枚铜钱法', en: 'Three Coin Method' },
   homeShakeHint:      { zh: '摇动或点击铜钱起卦', en: 'Shake or tap the coin to divine' },
+  // Browsers have no accelerometer, so promising a shake gesture there is a
+  // promise the platform cannot keep. Chosen via MOTION_SUPPORTED.
+  homeTapHint:        { zh: '点击铜钱起卦',       en: 'Tap the coin to divine' },
   homeCastingLine:    { zh: '正在铸造第 {n} 爻，共 6 爻…', en: 'Casting line {n} of 6…' },
   homeHexTitle:       { zh: '卦象',       en: 'Hexagram' },
   homePremiumBadge:   { zh: '✦ 高级版 — 解锁变爻与深度分析', en: '✦ PREMIUM — Unlock Changing Lines & Deep Analysis' },
@@ -135,6 +148,46 @@ export const UI_STRINGS = {
 
   // ── Auspiciousness label
   auspiciousnessLabel:{ zh: '{chinese}', en: '{chinese} · {english}' },
+
+  // ── Ask the Oracle (RAG follow-up questions)
+  sectionAsk:         { zh: '问卦 · 请示神谕', en: 'ASK THE ORACLE' },
+  askIntro:           {
+    zh: '就此卦提出你的疑问，神谕将依卦辞、象辞与变爻为你解答。',
+    en: 'Ask a question about this reading. The answer draws on its judgment, image, and changing lines.',
+  },
+  askPlaceholder:     {
+    zh: '例如：此卦对我换工作有何指引？',
+    en: 'e.g. What does this hexagram say about changing jobs?',
+  },
+  askSubmit:          { zh: '请示神谕', en: 'Ask the Oracle' },
+  askSubmitting:      { zh: '神谕思忖中…', en: 'Consulting the oracle…' },
+  askCharCount:       { zh: '{n} / {max}', en: '{n} / {max}' },
+  askRemaining:       { zh: '今日尚余 {n} 次', en: '{n} left today' },
+  askRemainingOne:    { zh: '今日仅余 1 次', en: '1 left today' },
+  askAnswerLabel:     { zh: '神谕', en: 'THE ORACLE ANSWERS' },
+  askSourcesLabel:    { zh: '依据', en: 'DRAWN FROM' },
+  askSourceCast:      { zh: '本卦', en: 'this reading' },
+  askSourceRelated:   { zh: '相关', en: 'related' },
+  askAskAnother:      { zh: '再问一次', en: 'Ask another question' },
+  askRetry:           { zh: '重试', en: 'Try again' },
+
+  // ── Ask the Oracle — quota exhausted
+  askExhaustedTitle:  { zh: '今日提问已用完', en: 'No questions left today' },
+  askExhaustedFree:   {
+    zh: '免费版每日可提问 {limit} 次，将于 UTC 零点重置。升级高级版可享每日 {premium} 次。',
+    en: 'The free tier allows {limit} questions a day, resetting at 00:00 UTC. Premium raises this to {premium}.',
+  },
+  askExhaustedPremium:{
+    zh: '高级版每日可提问 {limit} 次，将于 UTC 零点重置。',
+    en: 'Premium allows {limit} questions a day, resetting at 00:00 UTC.',
+  },
+  askUpgradeCTA:      { zh: '升级高级版 →', en: 'Upgrade to Premium →' },
+
+  // ── Ask the Oracle — framing note shown beneath every answer
+  askDisclaimer:      {
+    zh: '神谕所示为省思之镜，非预言，亦非承诺。',
+    en: 'The oracle offers a mirror for reflection — not a prediction, and not a promise.',
+  },
 };
 
 // ─── Context ──────────────────────────────────────────────────────────────────

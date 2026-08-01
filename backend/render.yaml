@@ -1,0 +1,101 @@
+# render.yaml — Render Blueprint for the 易鉴 Ask-the-Oracle backend
+# ─────────────────────────────────────────────────────────────────────────────
+# Deploy: Render Dashboard → New → Blueprint → point at this repository.
+# Render reads this file, provisions the service, then prompts for the two
+# secrets declared with `sync: false`.
+#
+# See README.md in this directory for the full walkthrough and the
+# free-tier caveats (cold starts, ephemeral quota storage).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: iching-oracle-api
+    runtime: python
+    plan: free
+    region: singapore          # closest to the app's primary audience; Render
+                               # also offers oregon, frankfurt, ohio, virginia
+    rootDir: backend           # this repo's root is the Expo app; the API lives here
+
+    # data/embeddings.json is gitignored — it carries the full text of all 512
+    # passages, which this public repository deliberately does not publish. So
+    # the build fetches it from a private URL. If you supply it as a Render
+    # Secret File instead, drop the fetch step and set EMBEDDINGS_PATH to the
+    # mount path. Either way the corpus never enters git history.
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python scripts/fetch_corpus.py
+
+    # One worker keeps the in-memory rate limiter coherent — with several
+    # workers each would hold its own window, multiplying the effective limit.
+    # The daily quota is unaffected either way, since it lives in SQLite.
+    # Threads give concurrency instead: requests spend most of their time
+    # waiting on the Claude and Voyage APIs, not on CPU.
+    startCommand: >-
+      gunicorn wsgi:app
+      --bind 0.0.0.0:$PORT
+      --workers 1
+      --threads 4
+      --timeout 120
+      --access-logfile -
+
+    # Render polls this to decide the service is live. It reports corpus size
+    # and provider, so a green check also confirms embeddings.json loaded.
+    healthCheckPath: /health
+
+    envVars:
+      # Pin the interpreter — Render's default tracks its own schedule, and an
+      # unannounced major bump is not something a deploy should discover.
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+
+      # Secrets. `sync: false` keeps them out of this file and out of git;
+      # Render prompts for them on first deploy and stores them encrypted.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+
+      # Where the build downloads the corpus from — a presigned S3/R2 link, a
+      # private GitHub release asset, or anything serving the raw JSON. Secret
+      # because the URL itself grants access to the content.
+      - key: CORPUS_URL
+        sync: false
+      # Only needed if that URL requires a header, e.g. "Bearer ghp_..." for a
+      # private GitHub release. Leave blank for presigned links.
+      - key: CORPUS_AUTH_HEADER
+        sync: false
+
+      # Operational knobs, safe to keep in version control. Each mirrors a
+      # default in config.py; setting them here makes the deployed values
+      # explicit rather than implicit.
+      - key: CLAUDE_MODEL
+        value: claude-haiku-4-5
+      - key: MAX_TOKENS
+        value: "500"
+      - key: TOP_K
+        value: "3"
+      - key: FREE_DAILY_LIMIT
+        value: "3"
+      - key: PREMIUM_DAILY_LIMIT
+        value: "20"
+      - key: RATE_LIMIT_REQUESTS
+        value: "10"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+
+      # Render's free tier has no persistent disk, so this lives in the
+      # container's ephemeral filesystem and resets on every deploy. /tmp is
+      # the honest place for it. See README.md → Known limitations.
+      - key: QUOTA_DB_PATH
+        value: /tmp/quota.db
+
+      # ORACLE_STUB_MODE makes the service answer with locally generated
+      # placeholder text (prefixed [STUB MODE]) instead of calling Claude.
+      # Currently ON: no Anthropic key has been purchased yet, and a visibly
+      # stubbed answer demonstrates the real pipeline (retrieval, quota, UI)
+      # more honestly than an error. When a key exists: enter it in the Render
+      # dashboard, flip this to "0", and redeploy. /health reports stub_mode,
+      # so the switch is verifiable from outside.
+      - key: ORACLE_STUB_MODE
+        value: "1"

@@ -16,7 +16,7 @@ import {
   StyleSheet, Dimensions, StatusBar, Platform, ScrollView,
   TextInput, Keyboard,
 } from 'react-native';
-import { Accelerometer } from 'expo-sensors';
+import { subscribeToAccelerometer, MOTION_SUPPORTED } from '../utils/motion';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
@@ -26,8 +26,24 @@ import { useIChing, DIVINATION_STATES, LINE_VALUE } from '../hooks/useIChing';
 import { useText } from '../context/LanguageContext';
 import { COLORS, FONTS, SPACING } from '../constants/theme';
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const COIN_SIZE = SCREEN_W * 0.42;
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const IS_WEB = Platform.OS === 'web';
+
+// A desktop browser window is far wider than any phone, so sizing the coin
+// from raw window width fills the first screenful with coin alone. The content
+// column is capped at a phone-like width, and window height bounds the coin,
+// so the whole home screen fits one screenful on web. On phones both caps sit
+// above the width-based size and nothing changes.
+const CONTENT_MAX_W = 480;
+const COIN_SIZE = Math.min(
+  Math.min(SCREEN_W, CONTENT_MAX_W) * (IS_WEB ? 0.36 : 0.42),
+  SCREEN_H * 0.28,
+);
+
+// Web gets tighter vertical rhythm for the same one-screenful reason; the
+// native spacing is untouched. 10px keeps sections distinct while letting the
+// whole column fit an 800px-tall browser window.
+const SECTION_GAP = IS_WEB ? 10 : SPACING.xl;
 
 // ─── LineIndicator ────────────────────────────────────────────────────────────
 
@@ -90,12 +106,12 @@ const TiltCoin = React.memo(function TiltCoin({ onPress, isCasting }) {
   const pulseScale  = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Accelerometer.setUpdateInterval(32);
-    const sub = Accelerometer.addListener(({ x, y }) => {
+    // Returns a no-op unsubscribe on platforms without an accelerometer, so
+    // the coin simply sits still instead of taking the screen down with it.
+    return subscribeToAccelerometer(32, ({ x, y }) => {
       Animated.spring(tiltX, { toValue: -y * 12, useNativeDriver: true, tension: 40, friction: 7 }).start();
       Animated.spring(tiltY, { toValue:  x * 12, useNativeDriver: true, tension: 40, friction: 7 }).start();
     });
-    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -277,7 +293,8 @@ export default function HomeScreen() {
       const count = formedLines.filter(v => v !== undefined).length;
       return tf('homeCastingLine', { n: count });
     }
-    return t('homeShakeHint');
+    // Don't advertise a gesture the platform cannot deliver.
+    return t(MOTION_SUPPORTED ? 'homeShakeHint' : 'homeTapHint');
   }, [isCasting, formedLines, t, tf, isZh]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -454,18 +471,19 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     flexGrow: 1, alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 40, paddingHorizontal: SPACING.lg,
+    paddingTop: IS_WEB ? SPACING.md : Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: IS_WEB ? SPACING.md : 40, paddingHorizontal: SPACING.lg,
+    width: '100%', maxWidth: CONTENT_MAX_W, alignSelf: 'center',
   },
 
   // ── Header
-  header: { alignItems: 'center', marginBottom: SPACING.xl, width: '100%' },
+  header: { alignItems: 'center', marginBottom: SECTION_GAP, width: '100%' },
 
   headerTitleRow: { alignItems: 'center' },
 
   headerChinese: {
-    fontFamily: FONTS.display, fontSize: 52, color: COLORS.gold,
-    letterSpacing: 12, lineHeight: 64,
+    fontFamily: FONTS.display, fontSize: IS_WEB ? 42 : 52, color: COLORS.gold,
+    letterSpacing: 12, lineHeight: IS_WEB ? 50 : 64,
   },
   headerEnglish: {
     fontFamily: FONTS.caption, fontSize: 11, color: COLORS.goldMuted,
@@ -478,14 +496,14 @@ const styles = StyleSheet.create({
 
   // Language toggle row — sits below the divider, centred
   toggleRow: {
-    marginTop: SPACING.md,
+    marginTop: IS_WEB ? SPACING.sm : SPACING.md,
     alignItems: 'center',
   },
 
   // ── Coin
   coinContainer: {
     alignItems: 'center', justifyContent: 'center',
-    marginVertical: SPACING.xl, height: COIN_SIZE + 40,
+    marginVertical: SECTION_GAP, height: COIN_SIZE + (IS_WEB ? 24 : 40),
   },
   glowRing: {
     position: 'absolute',
@@ -511,19 +529,19 @@ const styles = StyleSheet.create({
   baguaChar:       { fontSize: 13, color: '#000', opacity: 0.55, fontFamily: FONTS.display },
 
   // ── Status
-  statusContainer: { alignItems: 'center', marginBottom: SPACING.xl },
+  statusContainer: { alignItems: 'center', marginBottom: SECTION_GAP },
   statusText:      { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textSecondary, letterSpacing: 1, textAlign: 'center' },
   shakeHint:       { fontFamily: FONTS.display, fontSize: 16, color: COLORS.goldMuted, letterSpacing: 4, marginTop: SPACING.xs },
 
   // ── Lines
-  linesContainer: { width: '100%', marginBottom: SPACING.xl },
+  linesContainer: { width: '100%', marginBottom: SECTION_GAP },
   linesCard: {
     backgroundColor: COLORS.surface, borderRadius: 16,
     borderWidth: 1, borderColor: COLORS.goldDim,
-    padding: SPACING.lg, alignItems: 'center',
+    padding: IS_WEB ? SPACING.md : SPACING.lg, alignItems: 'center',
   },
-  linesTitle: { fontFamily: FONTS.display, fontSize: 18, color: COLORS.goldMuted, letterSpacing: 6, marginBottom: SPACING.md },
-  lineRow:    { flexDirection: 'row', alignItems: 'center', marginVertical: 5, width: '100%' },
+  linesTitle: { fontFamily: FONTS.display, fontSize: 18, color: COLORS.goldMuted, letterSpacing: 6, marginBottom: IS_WEB ? SPACING.sm : SPACING.md },
+  lineRow:    { flexDirection: 'row', alignItems: 'center', marginVertical: IS_WEB ? 2 : 5, width: '100%' },
   lineLabel:  { fontFamily: FONTS.caption, fontSize: 10, color: COLORS.goldDim, width: 16, textAlign: 'center', marginRight: SPACING.sm, letterSpacing: 0.5 },
   lineSymbolContainer: { flex: 1, height: 8, justifyContent: 'center' },
   lineSegmentFull: { height: 5, borderRadius: 3, width: '100%' },
@@ -545,7 +563,7 @@ const styles = StyleSheet.create({
 
   questionWrapper: {
     width: '100%',
-    marginBottom: SPACING.xl,
+    marginBottom: SECTION_GAP,
   },
 
   questionLabel: {
@@ -571,7 +589,9 @@ const styles = StyleSheet.create({
     paddingHorizontal:  SPACING.md,
     // minHeight ensures the placeholder is fully visible on every screen size.
     // 108 ≈ 3 × lineHeight(22) + paddingTop(12) + paddingBottom(8) + footer(~18)
-    minHeight: 108,
+    // The web column is 480px at most, wide enough for the placeholder in two
+    // lines, so the box drops to 84 there in service of the one-screenful goal.
+    minHeight: IS_WEB ? 84 : 108,
   },
 
   // NOTE: questionBoxFocused was removed.
@@ -633,7 +653,7 @@ const styles = StyleSheet.create({
   premiumBadge: {
     borderWidth: 1, borderColor: COLORS.goldDim, borderRadius: 8,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.xl, backgroundColor: 'rgba(212, 175, 55, 0.06)',
+    marginBottom: SECTION_GAP, backgroundColor: 'rgba(212, 175, 55, 0.06)',
   },
   premiumBadgeText: { fontFamily: FONTS.caption, fontSize: 10, color: COLORS.goldMuted, letterSpacing: 1, textAlign: 'center' },
 

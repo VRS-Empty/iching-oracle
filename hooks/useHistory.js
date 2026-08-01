@@ -1,43 +1,44 @@
 /**
  * hooks/useHistory.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Persists and retrieves divination history using expo-sqlite v14.
+ * Persists and retrieves divination history.
  *
  * Storage strategy:
  *   Only the minimal data needed to reconstruct a full result is stored —
  *   hexagram *numbers*, line values, and polarities. Full hexagram content
  *   (judgment, image, premium categories, etc.) is always re-joined from
- *   hexagrams.json at read time. This keeps the DB small and ensures content
+ *   hexagrams.json at read time. This keeps storage small and ensures content
  *   updates to the JSON are immediately reflected in history items.
  *
- * Schema:
- *   cast_history (
- *     session_id          TEXT PRIMARY KEY  — from useIChing sessionId
- *     timestamp           INTEGER NOT NULL  — Unix ms, for sorting
- *     original_hex_num    INTEGER NOT NULL  — 1–64
- *     transformed_hex_num INTEGER           — null if no changing lines
- *     line_values         TEXT NOT NULL     — JSON [6,7,8,9,...]
- *     changing_indices    TEXT NOT NULL     — JSON [0,3,...] (0-based)
- *     orig_polarities     TEXT NOT NULL     — JSON [1,0,1,...]
- *     trans_polarities    TEXT              — JSON or null
- *   )
+ *   The row store itself lives in ./historyStorage, which Metro resolves
+ *   per-platform: expo-sqlite on native, AsyncStorage on web. See
+ *   historyStorage.web.js for why web cannot use the SQLite path.
+ *
+ * Row shape:
+ *   session_id          — from useIChing sessionId
+ *   timestamp           — Unix ms, for sorting
+ *   original_hex_num    — 1–64
+ *   transformed_hex_num — null if no changing lines
+ *   line_values         — JSON [6,7,8,9,...]
+ *   changing_indices    — JSON [0,3,...] (0-based)
+ *   orig_polarities     — JSON [1,0,1,...]
+ *   trans_polarities    — JSON or null
+ *   question            — user's focus question
  *
  * Exports:
  *   FREE_HISTORY_LIMIT    — number of records shown to free users
- *   reconstructResult(r)  — turns a DB row into a full result object
+ *   reconstructResult(r)  — turns a stored row into a full result object
  *   useHistory()          — the hook
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import * as SQLite from 'expo-sqlite';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import hexagramData from '../data/hexagrams.json';
+import { loadRows, insertRow, deleteRow, clearRows } from './historyStorage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const FREE_HISTORY_LIMIT = 5;
-const DB_NAME  = 'history_v2.db';
-const TABLE    = 'cast_history';
 
 // ─── Hexagram lookup (module-level cache) ─────────────────────────────────────
 
@@ -49,47 +50,13 @@ function findHex(number) {
   return HEX_MAP.get(number) ?? null;
 }
 
-// ─── DB singleton ─────────────────────────────────────────────────────────────
-// One connection shared across all hook instances. Initialised lazily on first
-// call to getDB() and then reused. The CREATE TABLE is idempotent.
-
-let _db = null;
-
-function getDB() {
-  if (_db) return _db;
-
-  _db = SQLite.openDatabaseSync(DB_NAME);
-
-  _db.execSync(`
-    CREATE TABLE IF NOT EXISTS ${TABLE} (
-      session_id          TEXT PRIMARY KEY,
-      timestamp           INTEGER NOT NULL,
-      original_hex_num    INTEGER NOT NULL,
-      transformed_hex_num INTEGER,
-      line_values         TEXT    NOT NULL,
-      changing_indices    TEXT    NOT NULL,
-      orig_polarities     TEXT    NOT NULL,
-      trans_polarities    TEXT,
-      question            TEXT
-    );
-  `);
-
-  // Index for chronological queries (DESC sort is the common path)
-  _db.execSync(`
-    CREATE INDEX IF NOT EXISTS idx_cast_history_ts
-    ON ${TABLE} (timestamp DESC);
-  `);
-
-  return _db;
-}
-
 // ─── Reconstruct ──────────────────────────────────────────────────────────────
 
 /**
- * Turns a raw DB row back into the full `result` object that ResultScreen
+ * Turns a raw stored row back into the full `result` object that ResultScreen
  * expects. Re-joins hexagram content from hexagrams.json.
  *
- * @param {object} row  — row returned by getAllSync / getFirstSync
+ * @param {object} row  — row returned by the storage layer
  * @returns {DivinationResult | null}
  */
 export function reconstructResult(row) {
@@ -145,11 +112,11 @@ export function reconstructResult(row) {
  * useHistory()
  *
  * @returns {{
- *   records:    object[],   — raw DB rows, newest first
- *   totalCount: number,     — total records in DB
+ *   records:    object[],   — raw rows, newest first
+ *   totalCount: number,     — total records stored
  *   isLoading:  boolean,
  *   error:      string | null,
- *   saveCast:   (result: DivinationResult) => void,
+ *   saveCast:   (result: DivinationResult, question?: string) => void,
  *   deleteCast: (sessionId: string) => void,
  *   clearAll:   () => void,
  *   refresh:    () => void,
@@ -162,21 +129,29 @@ export function useHistory() {
   const [isLoading,  setIsLoading]  = useState(true);
   const [error,      setError]      = useState(null);
 
+  // The storage layer is async on every platform, so a resolved load must not
+  // write state into an unmounted screen.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
   // ── Load ────────────────────────────────────────────────────────────────────
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const db   = getDB();
-      const rows = db.getAllSync(`SELECT * FROM ${TABLE} ORDER BY timestamp DESC`);
-      setRecords(rows ?? []);
-      setTotalCount(rows?.length ?? 0);
+      const rows = await loadRows();
+      if (!mounted.current) return;
+      setRecords(rows);
+      setTotalCount(rows.length);
     } catch (e) {
       console.error('[useHistory] load error:', e);
-      setError(e.message ?? 'Unknown error loading history');
+      if (mounted.current) setError(e.message ?? 'Unknown error loading history');
     } finally {
-      setIsLoading(false);
+      if (mounted.current) setIsLoading(false);
     }
   }, []);
 
@@ -186,13 +161,13 @@ export function useHistory() {
 
   /**
    * Persists a completed divination result. Safe to call multiple times with
-   * the same result — INSERT OR IGNORE prevents duplicates by session_id.
+   * the same result — the storage layer ignores a session_id it already has.
    *
    * @param {DivinationResult} result   — from useIChing.castHexagram()
    * @param {string}           question — user's focus question; defaults to
    *                                      "General Inquiry" / "起卦问事" if blank
    */
-  const saveCast = useCallback((result, question) => {
+  const saveCast = useCallback(async (result, question) => {
     if (!result?.sessionId || !result?.originalHexagram?.data) {
       console.warn('[useHistory] saveCast: invalid result, skipping');
       return;
@@ -203,49 +178,28 @@ export function useHistory() {
       ? question.trim()
       : 'General Inquiry · 起卦问事';
 
-    try {
-      const db = getDB();
-      const { originalHexagram, transformedHexagram, lineValues, changingLineIndices } = result;
+    const { originalHexagram, transformedHexagram, lineValues, changingLineIndices } = result;
+    const row = {
+      session_id:          result.sessionId,
+      timestamp:           Date.now(),
+      original_hex_num:    originalHexagram.number,
+      transformed_hex_num: transformedHexagram?.number ?? null,
+      line_values:         JSON.stringify(lineValues),
+      changing_indices:    JSON.stringify(changingLineIndices),
+      orig_polarities:     JSON.stringify(originalHexagram.polarities),
+      trans_polarities:    transformedHexagram
+        ? JSON.stringify(transformedHexagram.polarities) : null,
+      question:            normalised,
+    };
 
-      db.runSync(
-        `INSERT OR IGNORE INTO ${TABLE}
-           (session_id, timestamp, original_hex_num, transformed_hex_num,
-            line_values, changing_indices, orig_polarities, trans_polarities,
-            question)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          result.sessionId,
-          Date.now(),
-          originalHexagram.number,
-          transformedHexagram?.number ?? null,
-          JSON.stringify(lineValues),
-          JSON.stringify(changingLineIndices),
-          JSON.stringify(originalHexagram.polarities),
-          transformedHexagram
-            ? JSON.stringify(transformedHexagram.polarities)
-            : null,
-          normalised,
-        ]
-      );
+    try {
+      const inserted = await insertRow(row);
+      if (!inserted || !mounted.current) return;
 
       // Update in-memory state without a full reload
-      setRecords(prev => {
-        const alreadyExists = prev.some(r => r.session_id === result.sessionId);
-        if (alreadyExists) return prev;
-        const newRow = {
-          session_id:          result.sessionId,
-          timestamp:           Date.now(),
-          original_hex_num:    originalHexagram.number,
-          transformed_hex_num: transformedHexagram?.number ?? null,
-          line_values:         JSON.stringify(lineValues),
-          changing_indices:    JSON.stringify(changingLineIndices),
-          orig_polarities:     JSON.stringify(originalHexagram.polarities),
-          trans_polarities:    transformedHexagram
-            ? JSON.stringify(transformedHexagram.polarities) : null,
-          question:            normalised,
-        };
-        return [newRow, ...prev];
-      });
+      setRecords(prev => (
+        prev.some(r => r.session_id === row.session_id) ? prev : [row, ...prev]
+      ));
       setTotalCount(c => c + 1);
     } catch (e) {
       console.error('[useHistory] saveCast error:', e);
@@ -254,9 +208,10 @@ export function useHistory() {
 
   // ── Delete ──────────────────────────────────────────────────────────────────
 
-  const deleteCast = useCallback((sessionId) => {
+  const deleteCast = useCallback(async (sessionId) => {
     try {
-      getDB().runSync(`DELETE FROM ${TABLE} WHERE session_id = ?`, [sessionId]);
+      await deleteRow(sessionId);
+      if (!mounted.current) return;
       setRecords(prev => prev.filter(r => r.session_id !== sessionId));
       setTotalCount(c => Math.max(0, c - 1));
     } catch (e) {
@@ -266,9 +221,10 @@ export function useHistory() {
 
   // ── Clear all ───────────────────────────────────────────────────────────────
 
-  const clearAll = useCallback(() => {
+  const clearAll = useCallback(async () => {
     try {
-      getDB().execSync(`DELETE FROM ${TABLE}`);
+      await clearRows();
+      if (!mounted.current) return;
       setRecords([]);
       setTotalCount(0);
     } catch (e) {

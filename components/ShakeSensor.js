@@ -20,8 +20,8 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
-import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
+import { subscribeToAccelerometer, MOTION_SUPPORTED } from '../utils/motion';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -229,13 +229,16 @@ const ShakeSensor = forwardRef(function ShakeSensor(
   // ─── Subscription lifecycle ──────────────────────────────────────────────
 
   const startListening = useCallback(() => {
-    Accelerometer.setUpdateInterval(CONFIG.UPDATE_INTERVAL_MS);
-    subscriptionRef.current = Accelerometer.addListener(handleAccelerometerData);
-    setIsListening(true);
+    // No-ops where there is no accelerometer (web); the parent's tap handler
+    // still reaches triggerCast through the imperative handle below.
+    subscriptionRef.current = subscribeToAccelerometer(
+      CONFIG.UPDATE_INTERVAL_MS, handleAccelerometerData,
+    );
+    setIsListening(MOTION_SUPPORTED);
   }, [handleAccelerometerData]);
 
   const stopListening = useCallback(() => {
-    subscriptionRef.current?.remove();
+    subscriptionRef.current?.();
     subscriptionRef.current = null;
     setIsListening(false);
   }, []);

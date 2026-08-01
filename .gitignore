@@ -4,3 +4,6 @@ dist/
 npm-debug.log
 
 data/hexagrams.json
+
+# Web export output — rebuilt by `npx expo export --platform web`
+dist-web/
