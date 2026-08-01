@@ -31,6 +31,45 @@ python -m http.server 4173 --directory dist-web
 
 ## Deploy
 
+**Live:** https://vrs-empty.github.io/iching-oracle/ — served from the
+`gh-pages` branch, talking to https://iching-oracle-api.onrender.com.
+
+### Redeploying the live site
+
+`gh-pages` holds build output only. It shares no history with `master` and is
+replaced wholesale each time, so there is nothing to merge and no reason to
+check it out locally.
+
+```bash
+npx expo export --platform web --output-dir dist-web
+```
+
+Then, from a scratch copy of `dist-web/` (not the repo):
+
+```bash
+touch .nojekyll && git init -b gh-pages && git add -A && git commit -m "Deploy web build"
+```
+
+```bash
+git push --force https://github.com/VRS-Empty/iching-oracle.git HEAD:refs/heads/gh-pages
+```
+
+`--force` is correct here and only here: the branch is a build artifact, and
+each deploy is a fresh unrelated history by design.
+
+Two settings make this work, and both fail as a **blank page with nothing in
+the console** if dropped — see *Troubleshooting*:
+
+- `expo.experiments.baseUrl` in app.json is `"/iching-oracle"`. A project page
+  is served under `/<repo>/`, but the exported index.html references the bundle
+  by a root-absolute path; without the prefix those requests 404 at the domain
+  root. Change it if the site ever moves to a host serving from `/`.
+- `.nojekyll` at the branch root. Pages runs Jekyll by default, which drops
+  directories whose names begin with an underscore — silently deleting the
+  entire `_expo/` bundle directory.
+
+### Other hosts
+
 Any static host works. The build deliberately has **no cross-origin isolation
 requirement** (see *History storage* below), so there are no custom response
 headers to configure — including on hosts that cannot set them, such as GitHub
@@ -46,22 +85,30 @@ Pages.
 
 ### Pointing at the backend
 
-The Ask-the-Oracle feature calls the Flask backend. After deploying it (see
-`backend/README.md`), set `PRODUCTION_URL` in `constants/api.js` to the
-service's URL and rebuild the web bundle. Until then, release builds point at a
-placeholder domain and the question box reports a connection error.
+The Ask-the-Oracle feature calls the Flask backend. `PRODUCTION_URL` in
+`constants/api.js` already points at the deployed service; changing services
+means editing it there and rebuilding the web bundle.
+
+Render's free tier suspends an idle instance after about fifteen minutes, and
+the next request pays roughly fifty seconds of cold start. `REQUEST_TIMEOUT_MS`
+is 60 s to clear that, but the first question after a quiet spell visibly
+hangs. Nothing is broken; it is what the free tier costs.
 
 CORS is already handled — the backend sends `Access-Control-Allow-Origin: *`,
 which is what a browser client needs and a native client does not.
 
 ### Showing the feature without an Anthropic key
 
-Answer generation is the one part that costs money. A backend deployed with
-`ORACLE_STUB_MODE=1` will answer, but every reply opens with
-`[STUB MODE — no Claude API key configured...]`. That is honest for a portfolio
-piece — the pipeline, retrieval, quota, and UI are all genuinely running — but
-the marker is visible to anyone who tries it. Decide whether you would rather
-show that or leave the feature erroring until a key is available.
+Answer generation is the one part that costs money, so the deployed service
+currently runs with `ORACLE_STUB_MODE=1`: it answers, but every reply opens
+with `[STUB MODE — no Claude API key configured...]`. Everything else on the
+path is genuinely running — retrieval picks real passages, the quota counts
+down, the client renders the sources — and the marker is visible to anyone who
+tries it, which is the honest trade for a portfolio piece.
+
+To switch it on once a key exists: enter `ANTHROPIC_API_KEY` in the Render
+dashboard, set `ORACLE_STUB_MODE` to `0` in `backend/render.yaml`, and push.
+`/health` reports `stub_mode`, so the change is verifiable from outside.
 
 ---
 
